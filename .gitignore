@@ -31,3 +31,7 @@ build/
 
 ### VS Code ###
 .vscode/
+
+/tokens
+/src/main/resources/application.properties
+/src/main/resources/credentials.json

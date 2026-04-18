@@ -8,8 +8,8 @@ package edu.lytvyniuk.telegrambot.service;
   @since 15.04.2026 - 23.18
 */
 
-import edu.lytvyniuk.telegrambot.entity.UserProfile;
-import edu.lytvyniuk.telegrambot.entity.UserProfileRepository;
+import edu.lytvyniuk.telegrambot.entity.user.UserProfile;
+import edu.lytvyniuk.telegrambot.entity.user.UserProfileRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;

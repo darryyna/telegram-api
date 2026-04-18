@@ -1,4 +1,4 @@
-package edu.lytvyniuk.telegrambot.entity;
+package edu.lytvyniuk.telegrambot.entity.user;
 
 /*
   @author darin

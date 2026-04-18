@@ -1,6 +1,6 @@
-package edu.lytvyniuk.telegrambot.config;
+package edu.lytvyniuk.telegrambot.config.handlers;
 
-import edu.lytvyniuk.telegrambot.entity.UserProfile;
+import edu.lytvyniuk.telegrambot.entity.user.UserProfile;
 import edu.lytvyniuk.telegrambot.service.UserProfileService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
