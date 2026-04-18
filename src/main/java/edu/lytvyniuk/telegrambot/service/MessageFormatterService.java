@@ -23,15 +23,15 @@ public class MessageFormatterService {
     );
 
     public String formatWeather(WeatherResponse weather) {
-        if (weather == null) {
-            return "Could not retrieve weather data. Please check the city name and try again.";
-        }
+        if (weather == null)
+            return "Не вдалося отримати дані про погоду. Перевірте назву міста та спробуйте ще раз.";
+
         return String.format("""
-                *Weather in %s*
-                
-                Temperature: *%.1f C*
-                Condition: %s
-                """,
+            *Погода в %s*
+            
+            Температура: *%.1f °C*
+            Опис: %s
+            """,
                 weather.getCity(),
                 weather.getTemperature(),
                 weather.getDescription()
@@ -39,12 +39,11 @@ public class MessageFormatterService {
     }
 
     public String formatCurrency(CurrencyResponse currency) {
-        if (currency == null) {
-            return "Could not retrieve exchange rates. Please try again later.";
-        }
+        if (currency == null)
+            return "Не вдалося отримати курси валют. Спробуйте пізніше.";
 
         StringBuilder sb = new StringBuilder();
-        sb.append(String.format("*Exchange rates relative to %s*\n\n", currency.getBase()));
+        sb.append(String.format("*Курси валют відносно %s*\n\n", currency.getBase()));
 
         Map<String, Double> rates = currency.getRates();
         if (rates != null) {
@@ -54,7 +53,7 @@ public class MessageFormatterService {
                 }
             }
         }
-        sb.append("\n_To check another currency, type: /currency EUR_");
+        sb.append("\n_Щоб перевірити іншу валюту: /currency EUR_");
         return sb.toString();
     }
 

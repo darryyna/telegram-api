@@ -7,6 +7,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 public class TelegramBotApplication {
 
     public static void main(String[] args) {
+        java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("UTC"));
         SpringApplication.run(TelegramBotApplication.class, args);
     }
 

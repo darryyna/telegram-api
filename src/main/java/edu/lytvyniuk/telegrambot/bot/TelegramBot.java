@@ -4,9 +4,12 @@ import edu.lytvyniuk.telegrambot.DTO.CurrencyResponse;
 import edu.lytvyniuk.telegrambot.DTO.NewsResponse;
 import edu.lytvyniuk.telegrambot.DTO.NlpResult;
 import edu.lytvyniuk.telegrambot.DTO.WeatherResponse;
+import edu.lytvyniuk.telegrambot.config.ProfileCommandHandler;
+import edu.lytvyniuk.telegrambot.entity.UserProfile;
 import edu.lytvyniuk.telegrambot.service.MessageFormatterService;
 import edu.lytvyniuk.telegrambot.service.NlpService;
 import edu.lytvyniuk.telegrambot.service.SmartApiService;
+import edu.lytvyniuk.telegrambot.service.UserProfileService;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -42,6 +45,12 @@ public class TelegramBot extends TelegramLongPollingBot {
     @Autowired
     private NlpService nlpService;
 
+    @Autowired
+    private UserProfileService userProfileService;
+
+    @Autowired
+    private ProfileCommandHandler profileCommandHandler;
+
     @Value("${telegram.bot.token}")
     private String botToken;
 
@@ -76,32 +85,46 @@ public class TelegramBot extends TelegramLongPollingBot {
         Message message = update.getMessage();
         String chatId    = message.getChatId().toString();
         String text      = message.getText().trim();
+        Long   userId    = message.getFrom().getId();
         String firstName = message.getFrom().getFirstName();
+        String username  = message.getFrom().getUserName();
+        userProfileService.getOrCreate(userId, firstName, username);
 
         log.info("Received message from {} ({}): {}", firstName, chatId, text);
 
         String response = text.startsWith("/")
-                ? handleCommand(text, firstName)
-                : handleFreeText(text);
+                ? handleCommand(text, firstName, userId)
+                : handleFreeText(text, userId);
 
         sendReply(chatId, response);
     }
 
-    private String handleCommand(String text, String firstName) {
+    private String handleCommand(String text, String firstName, Long userId) {
         String cleanText = text.replaceFirst("@\\S+", "").trim();
 
-        if (cleanText.equalsIgnoreCase("/start"))            return buildStartMessage(firstName);
-        if (cleanText.equalsIgnoreCase("/help"))             return buildHelpMessage();
-        if (cleanText.toLowerCase().startsWith("/weather"))  return handleWeatherCommand(cleanText);
-        if (cleanText.toLowerCase().startsWith("/currency")) return handleCurrencyCommand(cleanText);
-        if (cleanText.toLowerCase().startsWith("/news"))     return handleNewsCommand(cleanText);
+        if (cleanText.equalsIgnoreCase("/start"))              return buildStartMessage(firstName);
+        if (cleanText.equalsIgnoreCase("/help"))               return buildHelpMessage();
+        if (cleanText.equalsIgnoreCase("/profile"))            return profileCommandHandler.handleProfile(userId);
+        if (cleanText.equalsIgnoreCase("/settings"))           return profileCommandHandler.handleSettings(userId);
+        if (cleanText.toLowerCase().startsWith("/setcity"))    return profileCommandHandler.handleSetCity(userId, extractArgument(cleanText, "/setcity"));
+        if (cleanText.toLowerCase().startsWith("/settimeformat")) return profileCommandHandler.handleSetTimeFormat(userId, extractArgument(cleanText, "/settimeformat"));
+        if (cleanText.toLowerCase().startsWith("/weather"))    return handleWeatherCommand(cleanText, userId);
+        if (cleanText.toLowerCase().startsWith("/currency"))   return handleCurrencyCommand(cleanText);
+        if (cleanText.toLowerCase().startsWith("/news"))       return handleNewsCommand(cleanText);
 
         return "Unknown command. Type /help to see available commands.";
     }
 
-    private String handleWeatherCommand(String text) {
+    private String handleWeatherCommand(String text, Long userId) {
         String city = extractArgument(text, "/weather");
-        if (city.isEmpty()) return "Please specify a city. Example: `/weather London`";
+        if (city.isEmpty()) {
+            UserProfile profile = userProfileService.getProfile(userId);
+            if (profile != null && profile.getFavoriteCity() != null) {
+                city = profile.getFavoriteCity();
+            } else {
+                return "Please specify a city or save your city with `/setcity London`";
+            }
+        }
         return formatter.formatWeather(smartApiService.getWeather(city));
     }
 
@@ -117,33 +140,34 @@ public class TelegramBot extends TelegramLongPollingBot {
         return formatter.formatNews(smartApiService.getNews(category));
     }
 
-    private String handleFreeText(String text) {
+    private String handleFreeText(String text, Long userId) {
         NlpResult result = nlpService.analyze(text);
 
         return switch (result.getIntent()) {
             case WEATHER -> {
                 String city = result.getLocation();
                 if (city == null || city.isEmpty()) {
-                    yield "Which city? 🏙\nExample: *weather London* or `/weather London`";
+                    UserProfile profile = userProfileService.getProfile(userId);
+                    if (profile != null && profile.getFavoriteCity() != null) {
+                        yield formatter.formatWeather(smartApiService.getWeather(profile.getFavoriteCity()));
+                    }
+                    yield "Which city? \nExample: *weather London* or `/weather London`";
                 }
                 yield formatter.formatWeather(smartApiService.getWeather(city));
             }
             case CURRENCY -> formatter.formatCurrency(smartApiService.getCurrency(result.getCurrencyCode()));
-
-            case NEWS -> formatter.formatNews(smartApiService.getNews(result.getNewsCategory()));
-
-            case HELP -> buildHelpMessage();
-
-            case UNKNOWN -> """
-                    I didn't understand your request 🤔
-                    
-                    Try:
-                    - *weather London*
-                    - *rate EUR*
-                    - *news technology*
-                    
-                    Or type /help for all commands.
-                    """;
+            case NEWS     -> formatter.formatNews(smartApiService.getNews(result.getNewsCategory()));
+            case HELP     -> buildHelpMessage();
+            case UNKNOWN  -> """
+                I didn't understand your request 🤔
+                
+                Try:
+                - *weather London*
+                - *rate EUR*
+                - *news technology*
+                
+                Or type /help for all commands.
+                """;
         };
     }
 
@@ -154,39 +178,50 @@ public class TelegramBot extends TelegramLongPollingBot {
 
     private String buildStartMessage(String firstName) {
         return String.format("""
-                Hello, *%s*! I'm SmartBot.
-                
-                I can help you with:
-                - Weather: `/weather London`
-                - Currency rates: `/currency USD`
-                - News: `/news technology`
-                
-                You can also write in plain text:
-                - _"weather in Berlin"_
-                - _"rate EUR"_
-                - _"latest tech news"_
-                
-                Type /help to see all commands.
-                """, firstName);
+            Привіт, *%s*! Я SmartBot.
+            
+            Я можу допомогти з:
+            - Погода: `/weather Київ`
+            - Курси валют: `/currency USD`
+            - Новини: `/news технології`
+            
+            Можна також писати звичайним текстом:
+            - _"погода в Берліні"_
+            - _"курс євро"_
+            - _"останні новини технологій"_
+            
+            Збережи своє місто: `/setcity Київ`
+            Переглянь профіль: `/profile`
+            Введи /help для списку команд.
+            """, firstName);
     }
+
 
     private String buildHelpMessage() {
         return """
-                *Available commands:*
-                
-                `/start` - Welcome message
-                `/weather [city]` - Current weather
-                  _Example: /weather Paris_
-                
-                `/currency [code]` - Exchange rates
-                  _Example: /currency EUR_
-                
-                `/news [category]` - Latest news
-                  _Categories: general, technology, sports, business, science, health, entertainment_
-                  _Example: /news sports_
-                
-                `/help` - This help message
-                """;
+            *Доступні команди:*
+            
+            `/start` — Вітальне повідомлення
+            
+            `/weather [місто]` — Поточна погода
+              _Приклад: /weather Львів_
+              _Без міста — використовує збережене місто_
+            
+            `/currency [код]` — Курси валют
+              _Приклад: /currency EUR_
+            
+            `/news [категорія]` — Останні новини
+              _Категорії: general, technology, sports, business, science, health, entertainment_
+              _Приклад: /news sports_
+            
+            `/profile` — Переглянути профіль
+            `/settings` — Налаштування профілю
+            `/setcity [місто]` — Встановити улюблене місто
+            `/settimeformat [12h/24h]` — Формат часу
+            `/setlang [uk/en]` — Змінити мову
+            
+            `/help` — Це повідомлення
+            """;
     }
 
     private void sendReply(String chatId, String text) {

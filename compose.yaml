@@ -1,1 +1,11 @@
-services: { }
+services:
+  postgres:
+    image: postgres:15
+    container_name: telegram-postgres
+    environment:
+      POSTGRES_DB: telegrambot
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: your_password
+      TZ: Europe/Kyiv
+    ports:
+      - "5432:5432"
