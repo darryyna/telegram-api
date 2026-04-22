@@ -1,12 +1,5 @@
 package edu.lytvyniuk.telegrambot.entity.logs;
 
-/*
-  @author darin
-  @project telegram-bot
-  @class RequestLogRepository
-  @version 1.0.0
-  @since 18.04.2026 - 16.30
-*/
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -14,11 +7,21 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDateTime;
 import java.util.List;
+
+/*
+  @author darin
+  @project telegram-bot
+  @class RequestLogRepository
+  @version 2.0.0
+  @since 22.04.2026
+*/
+
 @Repository
 public interface RequestLogRepository extends JpaRepository<RequestLog, Long> {
     long countByCreatedAtAfter(LocalDateTime since);
 
     long countByTelegramIdAndCreatedAtAfter(Long telegramId, LocalDateTime since);
+
     @Query("""
             SELECT r.requestType, COUNT(r) AS cnt
             FROM RequestLog r
@@ -44,6 +47,10 @@ public interface RequestLogRepository extends JpaRepository<RequestLog, Long> {
             ORDER BY r.createdAt DESC
             """)
     List<RequestLog> findErrorsSince(@Param("since") LocalDateTime since);
+
+    List<RequestLog> findByTelegramIdAndCreatedAtAfterOrderByCreatedAtDesc(
+            Long telegramId, LocalDateTime createdAfter);
+
     List<RequestLog> findByCreatedAtAfterOrderByCreatedAtDesc(LocalDateTime since);
 
     long countBySuccessFalseAndCreatedAtAfter(LocalDateTime since);

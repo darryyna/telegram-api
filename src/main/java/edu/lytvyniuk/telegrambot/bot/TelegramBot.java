@@ -14,18 +14,24 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.TelegramBotsApi;
+import org.telegram.telegrambots.meta.api.methods.send.SendDocument;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
+import org.telegram.telegrambots.meta.api.objects.InputFile;
 import org.telegram.telegrambots.meta.api.objects.Message;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 import org.telegram.telegrambots.updatesreceivers.DefaultBotSession;
 
+import java.io.ByteArrayInputStream;
+import java.util.Collection;
+import java.util.List;
+
 /*
   @author darin
   @project telegram-bot
   @class TelegramBot
-  @version 1.0.0
-  @since 18.03.2026
+  @version 2.0.0
+  @since 22.04.2026
 */
 @Component
 @Slf4j
@@ -78,7 +84,7 @@ public class TelegramBot extends TelegramLongPollingBot {
 
         log.info("Received from {} ({}): {}", firstName, chatId, text);
 
-        String  response;
+        Object  response;
         RequestType requestType = RequestType.UNKNOWN;
         boolean success = true;
         String  errorMsg = null;
@@ -95,14 +101,32 @@ public class TelegramBot extends TelegramLongPollingBot {
             }
         } catch (Exception e) {
             log.error("Unhandled error processing message from {}: {}", userId, e.getMessage(), e);
-            response  = "❌ Виникла помилка. Спробуйте пізніше.";
+            response  = "Виникла помилка. Спробуйте пізніше.";
             success   = false;
             errorMsg  = e.getMessage();
         }
 
         analyticsService.log(userId, chatId, truncate(text, 300), requestType, success, errorMsg);
 
-        sendReply(chatId, response);
+        processResponse(chatId, response);
+    }
+
+    private void processResponse(String chatId, Object response) {
+        if (response == null) return;
+
+        if (response instanceof String text) {
+            sendReply(chatId, text);
+        } else if (response instanceof SendDocument document) {
+            try {
+                execute(document);
+            } catch (TelegramApiException e) {
+                log.error("Failed to send document to {}: {}", chatId, e.getMessage());
+            }
+        } else if (response instanceof Collection<?> collection) {
+            for (Object item : collection) {
+                processResponse(chatId, item);
+            }
+        }
     }
 
     private HandlerResult handleCommand(String text, String firstName, Long userId, String chatId) {
@@ -119,7 +143,9 @@ public class TelegramBot extends TelegramLongPollingBot {
         if (clean.equalsIgnoreCase("/stats"))
             return new HandlerResult(analyticsCommandHandler.handleUserStats(userId), RequestType.PROFILE);
         if (clean.equalsIgnoreCase("/report"))
-            return new HandlerResult(analyticsCommandHandler.handleExport(), RequestType.PROFILE);
+            return new HandlerResult(analyticsCommandHandler.handleExportMenu(), RequestType.PROFILE);
+        if (clean.toLowerCase().startsWith("/report"))
+            return new HandlerResult(handleReportCommand(clean, userId, chatId), RequestType.PROFILE);
 
         if (clean.toLowerCase().startsWith("/setcity"))
             return new HandlerResult(profileCommandHandler.handleSetCity(userId, extractArg(clean, "/setcity")), RequestType.SETTINGS);
@@ -153,6 +179,20 @@ public class TelegramBot extends TelegramLongPollingBot {
             return new HandlerResult(calendarCommandHandler.handleDelete(userId, extractArg(clean, "/deleteevent")), RequestType.EVENT_DELETE);
 
         return new HandlerResult("Unknown command. Type /help to see available commands.", RequestType.UNKNOWN);
+    }
+
+    private Object handleReportCommand(String text, Long userId, String chatId) {
+        String format = extractArg(text, "/report").trim().toLowerCase();
+
+        return switch (format) {
+            case "csv" -> analyticsCommandHandler.handleExportCsv(chatId, userId);
+            case "json" -> analyticsCommandHandler.handleExportJson(chatId, userId);
+            case "both" -> List.of(
+                    analyticsCommandHandler.handleExportCsv(chatId, userId),
+                    analyticsCommandHandler.handleExportJson(chatId, userId)
+            );
+            default -> analyticsCommandHandler.handleExportMenu();
+        };
     }
 
     private HandlerResult handleFreeText(String text, Long userId, String chatId) {
@@ -255,6 +295,24 @@ public class TelegramBot extends TelegramLongPollingBot {
         }
     }
 
+    private void sendFile(String chatId, byte[] data, String fileName, String caption) {
+        InputFile inputFile = new InputFile(
+                new ByteArrayInputStream(data),
+                fileName
+        );
+
+        SendDocument message = new SendDocument();
+        message.setChatId(chatId);
+        message.setDocument(inputFile);
+        message.setCaption(caption);
+
+        try {
+            execute(message);
+        } catch (TelegramApiException e) {
+            log.error("Failed to send file to {}: {}", chatId, e.getMessage());
+        }
+    }
+
     private String buildStartMessage(String firstName) {
         return String.format("""
             Привіт, *%s*! Я SmartBot.
@@ -267,6 +325,7 @@ public class TelegramBot extends TelegramLongPollingBot {
             - Нагадування: `/reminder завтра о 9:00 зустріч`
             - Календар: `/addevent понеділок о 14:00 Нарада`
             - Статистика: `/stats`
+            - Звіти: `/report`
 
             Введи /help для повного списку команд.
             """, firstName);
@@ -306,11 +365,14 @@ public class TelegramBot extends TelegramLongPollingBot {
 
             *📊 Статистика:*
             `/stats` — Ваша особиста статистика
-            `/report` — Сформувати CSV/JSON звіт
+            `/report [format]` — Експорт звіту
+            `/report csv` — CSV формат
+            `/report json` — JSON формат
+            `/report both` — Обидва формати
 
             `/help` — Це повідомлення
             """;
     }
 
-    private record HandlerResult(String response, RequestType type) {}
+    private record HandlerResult(Object response, RequestType type) {}
 }
